@@ -1,0 +1,24 @@
+{
+  "name": "jwt_authentication_service",
+  "version": "1.0.0",
+  "description": "a jwt authentication service ",
+  "main": "index.js",
+  "scripts": {
+    "test": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smart-programmer/jwt-authentication-service.git"
+  },
+  "keywords": [
+    "jwt",
+    "authentication",
+    "service"
+  ],
+  "author": "Ammar A Almuwallad",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/smart-programmer/jwt-authentication-service/issues"
+  },
+  "homepage": "https://github.com/smart-programmer/jwt-authentication-service#readme"
+}
