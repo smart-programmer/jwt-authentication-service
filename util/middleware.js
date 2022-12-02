@@ -3,7 +3,7 @@ const path = require('path')
 
 
 
-
+// log requests to log file
 function requestLogger(req, res, next) {
   const loggString = `a ${req.method} request at ${req.url} at ${new Date()}`
   const loggFilePath = path.join(__dirname, "../var/loggs.txt")

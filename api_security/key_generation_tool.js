@@ -36,7 +36,7 @@ const cipherText = AES.encrypt(jwtToken, process.env.TEMP_SITE_SECRET_KEY).toStr
 // base 64 encode the cipher 
 const base64Token = Buffer.from(cipherText).toString('base64')
 
-const finalToken = "api_auth_st_" + base64Token // first word short for api secret token
+const finalToken = "api_auth_st_" + base64Token // first word short for api auth secret token
 
 console.log(finalToken)
 

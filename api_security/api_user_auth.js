@@ -27,7 +27,7 @@ function getKeyFromRequestHeader(authorizationHeader) {
     return token
 }
 
-function checkAuthorizedUserMiddleware(req, res, next) {
+function checkAuthorizedApiUserMiddleware(req, res, next) {
     let authorizationHeader = req.headers.authorization
     // check if header exists
     if (!authorizationHeader) {
@@ -58,5 +58,5 @@ function checkAuthorizedUserMiddleware(req, res, next) {
 
 
 module.exports = {
-    checkAuthorizedUserMiddleware: checkAuthorizedUserMiddleware
+    checkAuthorizedApiUserMiddleware: checkAuthorizedApiUserMiddleware
 }
