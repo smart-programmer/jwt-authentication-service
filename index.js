@@ -4,17 +4,20 @@ const upload = multer();
 const path = require('path')
 const dotenv = require('dotenv')
 const jsonwebtoken = require('jsonwebtoken')
+const cookieParser = require('cookie-parser')
 const {readJsonFile} = require('./util/json_utils.js')
 const {checkAuthorizedApiUserMiddleware} = require('./api_security/api_user_auth.js')
 const {requestLogger} = require('./util/middleware.js')
-const {findUser} = require('./util/db_util')
-const {replaceUser} = require('./util/db_util')
+const {findUser, findUserWithId, replaceUser} = require('./util/db_util')
 const fs = require('fs')
 
 //read env variables
 dotenv.config();
 
 const app = express()
+
+// parse cookies
+app.use(cookieParser())
 
 app.use(requestLogger)
 
@@ -40,18 +43,17 @@ app.get('/users', (req, res) => {
     readJsonFile(db_path, data => { res.send(data) })
 })
 
-// authenticate user
-app.post('/users/authenticate', (req, res) => {
-    // get user credentials from payload
+// authenticate user if not logged in
+app.post('/users/login', (req, res) => {
+    // get user credentials from post body
     let username = req.body.username
     let password = req.body.password
-    // res.send(username + ' ' + password)
 
     // check for credentials match in db
     readJsonFile(db_path, data => {
         // get user index
         let userIndex = findUser(data, username, password)
-        // get user
+        // extract user if exists
         user = userIndex >= 0 ? data.users[userIndex] : null
         // console.log(user)
 
@@ -59,33 +61,80 @@ app.post('/users/authenticate', (req, res) => {
         // in mock db authenticate user by adding jwt to it's user object
         // in real life just return jwt and client will store it as they wish
         if (user) {
-            // setup jwt payload
-            const jwtUserPayload = {
+            // setup access token payload
+            const jwtAccessTokenPayload = {
                 id: user.id,
             }
-            
-            // generate jwt
-            const jwtToken = jsonwebtoken.sign(jwtUserPayload, process.env.TEMP_JWT_SECRET, {
-                expiresIn: 60 * 60 * 24 * 365 * 20 // expires in 20 years
+            // generate access token
+            const jwtAccessToken = jsonwebtoken.sign(jwtAccessTokenPayload, process.env.TEMP_JWT_SECRET, {
+                expiresIn: 60 * 60 * 1 // expires in 1 hour
             })
-            // add refresh token
-            
+            //setup refresh token payload
+            const jwtRefreshTokenPayload = {
+                id: user.id,
+            }
+            // generate refresh token
+            const jwtRefreshToken = jsonwebtoken.sign(jwtRefreshTokenPayload, process.env.TEMP_JWT_SECRET, {
+                expiresIn: 60 * 60 * 24 * 7 // expires in 7 days
+            })
             // store tokens in mockup DB
-            user.auth_token = jwtToken
+            user.access_token = jwtAccessToken
+            user.refresh_token = jwtRefreshToken
             replaceUser(data.users, userIndex, user)
             fs.writeFileSync(db_path, JSON.stringify(data))
             // console.log(data)
             res.send("user has been authenticated")
-        } else{
+        } else {
             res.status(404).send("user does not exist")
         }
 
     })
 })
 
+// use refresh token to grant new access tokens
 app.post('/users/refresh-auth', (req, res) => {
-    // get refresh token, if it's valid return new access token
-    // if refresh and access tokens are expired redirect to login route
+    /* get refresh token, if it's valid return new access token if not return 404(user needs to re-login) */
+    // set refresh token if it's a cookie else null
+    let refreshToken = req.cookies.refresh_token || null
+    let source = refreshToken? "cookie" : null
+    // if not in cookie check if it's in body form field and set else null
+    refreshToken = refreshToken? refreshToken : (req.body.refresh_token || null)
+    source = source? "cookie" : "body"
+    // if no token return 404
+    if (!refreshToken){
+        res.status(404).send("no access token was provided")
+        return
+    }
+    jsonwebtoken.verify(refreshToken, process.env.TEMP_JWT_SECRET, (err, decodedPayload) => {
+        if (err){
+            res.status(404).send("invalid refresh token please login again")
+            return 
+        }
+        // generate new access token
+        const jwtAccessTokenPayload = {
+            id: decodedPayload.id,
+        }
+        const jwtAccessToken = jsonwebtoken.sign(jwtAccessTokenPayload, process.env.TEMP_JWT_SECRET, {
+            expiresIn: 60 * 60 * 1 // expires in 1 hour
+        })
+        // in mockup db reset access token in user object
+        readJsonFile(db_path, data => {
+            // get user index
+            let userIndex = findUserWithId(data, decodedPayload.id.toString())
+            // extract user if exists
+            user = userIndex >= 0 ? data.users[userIndex] : null
+            if (user) {
+                user.access_token = jwtAccessToken
+                replaceUser(data.users, userIndex, user)
+                fs.writeFileSync(db_path, JSON.stringify(data))
+                res.send("user access token refreshed")
+            } else {
+                res.status(404).send("possible payload tampering, user doesn't exists")
+            }
+        })
+        // return new access token in real world
+        // res.send(jwtAccessToken)
+    })
 })
 
 
