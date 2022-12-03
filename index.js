@@ -8,7 +8,8 @@ const cookieParser = require('cookie-parser')
 const {readJsonFile} = require('./util/json_utils.js')
 const {checkAuthorizedApiUserMiddleware} = require('./api_security/api_user_auth.js')
 const {requestLogger} = require('./util/middleware.js')
-const {findUser, findUserWithId, replaceUser} = require('./util/db_util')
+const {findUser, findUserWithId, replaceUser} = require('./util/db_util.js')
+const {getTokenFromBearerRequestHeader} = require('./util/utils.js')
 const fs = require('fs')
 
 //read env variables
@@ -94,15 +95,15 @@ app.post('/users/login', (req, res) => {
 // use refresh token to grant new access tokens
 app.post('/users/refresh-auth', (req, res) => {
     /* get refresh token, if it's valid return new access token if not return 404(user needs to re-login) */
-    // set refresh token if it's a cookie else null
+    // get refresh token if it's a cookie else null
     let refreshToken = req.cookies.refresh_token || null
     let source = refreshToken? "cookie" : null
-    // if not in cookie check if it's in body form field and set else null
+    // if not in cookie check if it's in body form field and get else null
     refreshToken = refreshToken? refreshToken : (req.body.refresh_token || null)
     source = source? "cookie" : "body"
     // if no token return 404
     if (!refreshToken){
-        res.status(404).send("no access token was provided")
+        res.status(404).send("no refresh token was provided")
         return
     }
     jsonwebtoken.verify(refreshToken, process.env.TEMP_JWT_SECRET, (err, decodedPayload) => {
@@ -129,11 +130,52 @@ app.post('/users/refresh-auth', (req, res) => {
                 fs.writeFileSync(db_path, JSON.stringify(data))
                 res.send("user access token refreshed")
             } else {
-                res.status(404).send("possible payload tampering, user doesn't exists")
+                res.status(404).send("possible payload tampering, user doesn't exist")
             }
         })
         // return new access token in real world
         // res.send(jwtAccessToken)
+    })
+})
+
+// check if user is authenticated route
+app.post('/users/is-authenticated', function(req, res) {
+    // get refresh token if it's a cookie else null
+    let refreshToken = req.cookies.refresh_token || null
+    // if not in cookie check if it's in body form field and get else null
+    refreshToken = refreshToken? refreshToken : (req.body.refresh_token || null)
+    // if no token return 404
+    if (!refreshToken){
+        res.status(404).send("no refresh token was provided")
+        return
+    }
+    // get access token from Access-Header that i've invented
+    const accessHeader = req.headers["access-header"] || null
+    // if header not set return 404
+    if (!accessHeader){
+        res.status(404).send("Access-Header not set")
+        return
+    }
+    let accessToken = getTokenFromBearerRequestHeader(accessHeader)
+    // if no token return 404
+    if (!accessToken){
+        res.status(404).send("access token header is not properly set")
+        return
+    }
+    // verify refresh token
+    try {
+        jsonwebtoken.verify(refreshToken, process.env.TEMP_JWT_SECRET)
+    } catch {
+        res.status(404).send("invalid refresh token please login")
+        return
+    }
+    // verify access token
+    jsonwebtoken.verify(accessToken, process.env.TEMP_JWT_SECRET, (err, decodedPayload) => {
+        if (err){
+            res.status(404).send("invalid access token please refresh the token")
+            return 
+        }
+        res.status(200).send(decodedPayload)
     })
 })
 

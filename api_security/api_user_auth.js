@@ -3,6 +3,7 @@ const { request } = require("express");
 const prompt = require('prompt-sync')({ sigint: true });
 const path = require('path')
 const jwt = require('jsonwebtoken')
+const {getTokenFromBearerRequestHeader} = require('../util/utils')
 require('dotenv').config({ path: path.join(__dirname, '../.env') })
 
 
@@ -22,11 +23,6 @@ function extractJwt(encryptedToken){
     }
 }
 
-function getKeyFromRequestHeader(authorizationHeader) {
-    let token = authorizationHeader.split(' ')[1] // "bearer token" no spaces after token
-    return token
-}
-
 function checkAuthorizedApiUserMiddleware(req, res, next) {
     let authorizationHeader = req.headers.authorization
     // check if header exists
@@ -35,7 +31,7 @@ function checkAuthorizedApiUserMiddleware(req, res, next) {
         res.status(401).send("you're unauthorized to access this page.");
         return;
     }
-    let encryptedToken = getKeyFromRequestHeader(authorizationHeader)
+    let encryptedToken = getTokenFromBearerRequestHeader(authorizationHeader)
     let jwtToken = extractJwt(encryptedToken)
     // if not valid jwt token then unauthorized
     if (!jwtToken) {
