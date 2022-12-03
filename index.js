@@ -133,22 +133,13 @@ app.post('/users/refresh-auth', (req, res) => {
                 res.status(404).send("possible payload tampering, user doesn't exist")
             }
         })
-        // return new access token in real world
+        // just return new access token in real world
         // res.send(jwtAccessToken)
     })
 })
 
 // check if user is authenticated route
 app.post('/users/is-authenticated', function(req, res) {
-    // get refresh token if it's a cookie else null
-    let refreshToken = req.cookies.refresh_token || null
-    // if not in cookie check if it's in body form field and get else null
-    refreshToken = refreshToken? refreshToken : (req.body.refresh_token || null)
-    // if no token return 404
-    if (!refreshToken){
-        res.status(404).send("no refresh token was provided")
-        return
-    }
     // get access token from Access-Header that i've invented
     const accessHeader = req.headers["access-header"] || null
     // if header not set return 404
@@ -162,20 +153,24 @@ app.post('/users/is-authenticated', function(req, res) {
         res.status(404).send("access token header is not properly set")
         return
     }
-    // verify refresh token
-    try {
-        jsonwebtoken.verify(refreshToken, process.env.TEMP_JWT_SECRET)
-    } catch {
-        res.status(404).send("invalid refresh token please login")
-        return
-    }
     // verify access token
     jsonwebtoken.verify(accessToken, process.env.TEMP_JWT_SECRET, (err, decodedPayload) => {
         if (err){
             res.status(404).send("invalid access token please refresh the token")
             return 
         }
-        res.status(200).send(decodedPayload)
+        // get user from DB
+        readJsonFile(db_path, data => {
+            // get user index
+            let userIndex = findUserWithId(data, decodedPayload.id.toString())
+            // extract user if exists
+            user = userIndex >= 0 ? data.users[userIndex] : null
+            if (user) {
+                res.status(200).send(user)
+            } else {
+                res.status(404).send("user doesn't exists anymore")
+            }
+        })
     })
 })
 
