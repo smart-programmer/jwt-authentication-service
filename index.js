@@ -9,8 +9,10 @@ const {readJsonFile} = require('./util/json_utils.js')
 const {checkAuthorizedApiUserMiddleware} = require('./api_security/api_user_auth.js')
 const {requestLogger} = require('./util/middleware.js')
 const {findUser, findUserWithId, replaceUser} = require('./util/db_util.js')
-const {getTokenFromBearerRequestHeader} = require('./util/utils.js')
-const fs = require('fs')
+const {getTokenFromBearerRequestHeader, secondsSinceEpoch} = require('./util/utils.js')
+const {blackListToken, checkBlacklistedToken} = require('./util/redis_util.js')
+const fs = require('fs');
+const { application } = require('express');
 
 //read env variables
 dotenv.config();
@@ -94,7 +96,6 @@ app.post('/users/login', (req, res) => {
 
 // use refresh token to grant new access tokens
 app.post('/users/refresh-auth', (req, res) => {
-    /* get refresh token, if it's valid return new access token if not return 404(user needs to re-login) */
     // get refresh token if it's a cookie else null
     let refreshToken = req.cookies.refresh_token || null
     let source = refreshToken? "cookie" : null
@@ -106,6 +107,8 @@ app.post('/users/refresh-auth', (req, res) => {
         res.status(404).send("no refresh token was provided")
         return
     }
+    // check if refresh token not black listed
+
     jsonwebtoken.verify(refreshToken, process.env.TEMP_JWT_SECRET, (err, decodedPayload) => {
         if (err){
             res.status(404).send("invalid refresh token please login again")
@@ -140,7 +143,7 @@ app.post('/users/refresh-auth', (req, res) => {
 
 // check if user is authenticated route
 app.post('/users/is-authenticated', function(req, res) {
-    // get access token from Access-Header that i've invented
+    // get access token from Access-Header
     const accessHeader = req.headers["access-header"] || null
     // if header not set return 404
     if (!accessHeader){
@@ -153,6 +156,8 @@ app.post('/users/is-authenticated', function(req, res) {
         res.status(404).send("access token header is not properly set")
         return
     }
+    // check if refresh token not black listed
+
     // verify access token
     jsonwebtoken.verify(accessToken, process.env.TEMP_JWT_SECRET, (err, decodedPayload) => {
         if (err){
@@ -172,6 +177,62 @@ app.post('/users/is-authenticated', function(req, res) {
             }
         })
     })
+})
+
+app.post('/users/logout', (req, res) => {
+    // extract and verify refresh token
+    // if tokens are valid connect to redis and register the token as a key with the value of 'logout'
+    // get refresh token if it's a cookie else null
+    let refreshToken = req.cookies.refresh_token || null
+    // if not in cookie check if it's in body form field and get else null
+    refreshToken = refreshToken? refreshToken : (req.body.refresh_token || null)
+    // if no token return 404
+    if (!refreshToken){
+        res.status(404).send("no refresh token was provided")
+        return
+    }
+    // get access token from Access-Header 
+    const accessHeader = req.headers["access-header"] || null
+    // if header not set return 404
+    if (!accessHeader){
+        res.status(404).send("Access-Header not set")
+        return
+    }
+    let accessToken = getTokenFromBearerRequestHeader(accessHeader)
+    // if no token return 404
+    if (!accessToken){
+        res.status(404).send("access token header is not properly set")
+        return
+    }
+    // verify access tokens
+    let decodedRefreshPayload = null
+    let decodedAccessPayload = null
+    let invalidAccessToken = false
+    try {
+        decodedRefreshPayload = jsonwebtoken.verify(refreshToken, process.env.TEMP_JWT_SECRET)
+        try {
+            decodedAccessPayload = jsonwebtoken.verify(accessToken, process.env.TEMP_JWT_SECRET)
+        } catch (err) {
+            invalidAccessToken = true
+        }
+    } catch (err) {
+        if (!invalidAccessToken) {
+            // refresh token invalid but access token is valid
+            const blackListExpirationTime = decodedAccessPayload.exp - secondsSinceEpoch() // access token remaining expiration time
+            blackListToken(refreshToken, "logout", blackListExpirationTime)
+            res.status(200).send("user logged out")
+            return
+        } else {
+            // access and refresh tokens invalid 
+            res.status(404).send("user not logged in")
+            return 
+        }
+    }
+    // refresh token valid but access token invalid
+    const blackListExpirationTime = decodedRefreshPayload.exp - secondsSinceEpoch() // refresh token remaining expiration time
+    blackListToken(refreshToken, "logout", blackListExpirationTime)
+    res.status(200).send("user logged out")
+    return
 })
 
 

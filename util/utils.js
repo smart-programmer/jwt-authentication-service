@@ -10,6 +10,12 @@ function getTokenFromBearerRequestHeader(authorizationHeader) {
     return token[1]
 }
 
+function secondsSinceEpoch() {
+    return Math.floor(new Date().getTime() / 1000)
+}
+      
+
 module.exports = {
-    getTokenFromBearerRequestHeader : getTokenFromBearerRequestHeader
+    getTokenFromBearerRequestHeader : getTokenFromBearerRequestHeader,
+    secondsSinceEpoch : secondsSinceEpoch
 }
