@@ -38,9 +38,6 @@ app.use(checkAuthorizedApiUserMiddleware)
 // mock db path
 db_path = path.join(__dirname, 'mockup-DB.json')
 
-
-
-
 // print all users route
 app.get('/users', (req, res) => {
     readJsonFile(db_path, data => { res.send(data) })
@@ -103,41 +100,42 @@ app.post('/users/refresh-auth', (req, res) => {
     }
 
     // check if refresh token not black listed
-    const isBlackListed = checkBlacklistedToken(refreshToken)
-    if (isBlackListed){
-        res.status(301).send("refresh token is blacklisted")
-        return
-    }
-
-    jsonwebtoken.verify(refreshToken, process.env.TEMP_JWT_SECRET, (err, decodedPayload) => {
-        if (err){
-            res.status(404).send("invalid refresh token please login again")
-            return 
+    checkBlacklistedToken(refreshToken).then(value => {
+        if (value){
+            res.status(301).send("refresh token is blacklisted")
+            return
         }
-        // generate new access token
-        const jwtAccessTokenPayload = {
-            id: decodedPayload.id,
-        }
-        const jwtAccessToken = jsonwebtoken.sign(jwtAccessTokenPayload, process.env.TEMP_JWT_SECRET, {
-            expiresIn: 60 * 60 * 1 // expires in 1 hour
-        })
-        // in mockup db reset access token in user object
-        readJsonFile(db_path, data => {
-            // get user index
-            let userIndex = findUserWithId(data, decodedPayload.id.toString())
-            // extract user if exists
-            user = userIndex >= 0 ? data.users[userIndex] : null
-            if (user) {
-                user.access_token = jwtAccessToken
-                replaceUser(data.users, userIndex, user)
-                fs.writeFileSync(db_path, JSON.stringify(data))
-                res.send("user access token refreshed")
-            } else {
-                res.status(404).send("possible payload tampering, user doesn't exist")
+        // refresh if valid token
+        jsonwebtoken.verify(refreshToken, process.env.TEMP_JWT_SECRET, (err, decodedPayload) => {
+            if (err){
+                res.status(404).send("invalid refresh token please login again")
+                return 
             }
+            // generate new access token
+            const jwtAccessTokenPayload = {
+                id: decodedPayload.id,
+            }
+            const jwtAccessToken = jsonwebtoken.sign(jwtAccessTokenPayload, process.env.TEMP_JWT_SECRET, {
+                expiresIn: 60 * 60 * 1 // expires in 1 hour
+            })
+            // in mockup db reset access token in user object
+            readJsonFile(db_path, data => {
+                // get user index
+                let userIndex = findUserWithId(data, decodedPayload.id.toString())
+                // extract user if exists
+                user = userIndex >= 0 ? data.users[userIndex] : null
+                if (user) {
+                    user.access_token = jwtAccessToken
+                    replaceUser(data.users, userIndex, user)
+                    fs.writeFileSync(db_path, JSON.stringify(data))
+                    res.send("user access token refreshed")
+                } else {
+                    res.status(404).send("possible payload tampering, user doesn't exist")
+                }
+            })
+            // just return new access token in real world
+            // res.send(jwtAccessToken)
         })
-        // just return new access token in real world
-        // res.send(jwtAccessToken)
     })
 })
 
@@ -151,46 +149,49 @@ app.post('/users/is-authenticated', function(req, res) {
     }
 
     // check if refresh token not black listed
-    const isBlackListed = checkBlacklistedToken(refreshToken)
-    if (isBlackListed){
-        res.status(301).send("refresh token is blacklisted")
-        return
-    }
-
-    // get access token from Access-Header
-    const accessHeader = req.headers["access-header"] || null
-    // if header not set return 404
-    if (!accessHeader){
-        res.status(404).send("Access-Header not set")
-        return
-    }
-
-    let accessToken = getTokenFromBearerRequestHeader(accessHeader)
-    // if no token return 404
-    if (!accessToken){
-        res.status(404).send("access token header is not properly set")
-        return
-    }
-
-    // verify access token
-    jsonwebtoken.verify(accessToken, process.env.TEMP_JWT_SECRET, (err, decodedPayload) => {
-        if (err){
-            res.status(404).send("invalid access token please refresh the token")
-            return 
+    checkBlacklistedToken(refreshToken).then(value => {
+        if (value){
+            res.status(301).send("refresh token is blacklisted")
+            return
         }
-        // get user from DB
-        readJsonFile(db_path, data => {
-            // get user index
-            let userIndex = findUserWithId(data, decodedPayload.id.toString())
-            // extract user if exists
-            user = userIndex >= 0 ? data.users[userIndex] : null
-            if (user) {
-                res.status(200).send(user)
-            } else {
-                res.status(404).send("user doesn't exists anymore")
+
+        // get access token from Access-Header
+        const accessHeader = req.headers["access-header"] || null
+        // if header not set return 404
+        if (!accessHeader){
+            res.status(404).send("Access-Header not set")
+            return
+        }
+
+        let accessToken = getTokenFromBearerRequestHeader(accessHeader)
+        // if no token return 404
+        if (!accessToken){
+            res.status(404).send("access token header is not properly set")
+            return
+        }
+
+        // verify access token
+        jsonwebtoken.verify(accessToken, process.env.TEMP_JWT_SECRET, (err, decodedPayload) => {
+            if (err){
+                res.status(404).send("invalid access token please refresh the token")
+                return 
             }
+            // get user from DB
+            readJsonFile(db_path, data => {
+                // get user index
+                let userIndex = findUserWithId(data, decodedPayload.id.toString())
+                // extract user if exists
+                user = userIndex >= 0 ? data.users[userIndex] : null
+                if (user) {
+                    res.status(200).send(user)
+                } else {
+                    res.status(404).send("user doesn't exists anymore")
+                }
+            })
         })
     })
+
+    
 })
 
 app.post('/users/logout', (req, res) => {
