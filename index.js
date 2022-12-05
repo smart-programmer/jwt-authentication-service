@@ -9,7 +9,7 @@ const {readJsonFile} = require('./util/json_utils.js')
 const {checkAuthorizedApiUserMiddleware} = require('./api_security/api_user_auth.js')
 const {requestLogger} = require('./util/middleware.js')
 const {findUser, findUserWithId, replaceUser} = require('./util/db_util.js')
-const {getTokenFromBearerRequestHeader, secondsSinceEpoch} = require('./util/utils.js')
+const {getTokenFromBearerRequestHeader, secondsSinceEpoch, extractRefreshToken} = require('./util/utils.js')
 const {blackListToken, checkBlacklistedToken} = require('./util/redis_util.js')
 const fs = require('fs');
 const { application } = require('express');
@@ -41,12 +41,12 @@ db_path = path.join(__dirname, 'mockup-DB.json')
 
 
 
-// print all users
+// print all users route
 app.get('/users', (req, res) => {
     readJsonFile(db_path, data => { res.send(data) })
 })
 
-// authenticate user if not logged in
+// authenticate user 
 app.post('/users/login', (req, res) => {
     // get user credentials from post body
     let username = req.body.username
@@ -70,7 +70,7 @@ app.post('/users/login', (req, res) => {
             }
             // generate access token
             const jwtAccessToken = jsonwebtoken.sign(jwtAccessTokenPayload, process.env.TEMP_JWT_SECRET, {
-                expiresIn: 60 * 60 * 1 // expires in 1 hour
+                expiresIn: 60 * 10 // expires in 10 minutes
             })
             //setup refresh token payload
             const jwtRefreshTokenPayload = {
@@ -96,18 +96,18 @@ app.post('/users/login', (req, res) => {
 
 // use refresh token to grant new access tokens
 app.post('/users/refresh-auth', (req, res) => {
-    // get refresh token if it's a cookie else null
-    let refreshToken = req.cookies.refresh_token || null
-    let source = refreshToken? "cookie" : null
-    // if not in cookie check if it's in body form field and get else null
-    refreshToken = refreshToken? refreshToken : (req.body.refresh_token || null)
-    source = source? "cookie" : "body"
-    // if no token return 404
+    const {refreshToken} = extractRefreshToken(req)
     if (!refreshToken){
         res.status(404).send("no refresh token was provided")
         return
     }
+
     // check if refresh token not black listed
+    const isBlackListed = checkBlacklistedToken(refreshToken)
+    if (isBlackListed){
+        res.status(301).send("refresh token is blacklisted")
+        return
+    }
 
     jsonwebtoken.verify(refreshToken, process.env.TEMP_JWT_SECRET, (err, decodedPayload) => {
         if (err){
@@ -142,7 +142,21 @@ app.post('/users/refresh-auth', (req, res) => {
 })
 
 // check if user is authenticated route
+// clients requests is authenticated if 404 requests refresh if 404 prompt login else use and store access token from refresh request
 app.post('/users/is-authenticated', function(req, res) {
+    const {refreshToken} = extractRefreshToken(req)
+    if (!refreshToken){
+        res.status(404).send("no refresh token was provided")
+        return
+    }
+
+    // check if refresh token not black listed
+    const isBlackListed = checkBlacklistedToken(refreshToken)
+    if (isBlackListed){
+        res.status(301).send("refresh token is blacklisted")
+        return
+    }
+
     // get access token from Access-Header
     const accessHeader = req.headers["access-header"] || null
     // if header not set return 404
@@ -150,13 +164,13 @@ app.post('/users/is-authenticated', function(req, res) {
         res.status(404).send("Access-Header not set")
         return
     }
+
     let accessToken = getTokenFromBearerRequestHeader(accessHeader)
     // if no token return 404
     if (!accessToken){
         res.status(404).send("access token header is not properly set")
         return
     }
-    // check if refresh token not black listed
 
     // verify access token
     jsonwebtoken.verify(accessToken, process.env.TEMP_JWT_SECRET, (err, decodedPayload) => {
@@ -183,10 +197,7 @@ app.post('/users/logout', (req, res) => {
     // extract and verify refresh token
     // if tokens are valid connect to redis and register the token as a key with the value of 'logout'
     // get refresh token if it's a cookie else null
-    let refreshToken = req.cookies.refresh_token || null
-    // if not in cookie check if it's in body form field and get else null
-    refreshToken = refreshToken? refreshToken : (req.body.refresh_token || null)
-    // if no token return 404
+    const {refreshToken} = extractRefreshToken(req)
     if (!refreshToken){
         res.status(404).send("no refresh token was provided")
         return
@@ -198,7 +209,7 @@ app.post('/users/logout', (req, res) => {
         res.status(404).send("Access-Header not set")
         return
     }
-    let accessToken = getTokenFromBearerRequestHeader(accessHeader)
+    const accessToken = getTokenFromBearerRequestHeader(accessHeader)
     // if no token return 404
     if (!accessToken){
         res.status(404).send("access token header is not properly set")
@@ -234,7 +245,6 @@ app.post('/users/logout', (req, res) => {
     res.status(200).send("user logged out")
     return
 })
-
 
 
 app.listen(process.env.PORT, (err) => {
