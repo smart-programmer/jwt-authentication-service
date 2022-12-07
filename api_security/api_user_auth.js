@@ -4,7 +4,7 @@ const prompt = require('prompt-sync')({ sigint: true });
 const path = require('path')
 const jwt = require('jsonwebtoken')
 const {getTokenFromBearerRequestHeader} = require('../util/utils')
-require('dotenv').config({ path: path.join(__dirname, '../.env') })
+require('dotenv').config({ path: path.join(__dirname, '../../.env') })
 
 
 

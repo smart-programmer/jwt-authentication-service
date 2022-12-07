@@ -15,7 +15,7 @@ const fs = require('fs');
 const { application } = require('express');
 
 //read env variables
-dotenv.config();
+require('dotenv').config({ path: path.join(__dirname, '../.env') })
 
 const app = express()
 

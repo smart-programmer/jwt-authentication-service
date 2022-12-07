@@ -1,6 +1,6 @@
 const { createClient } = require('redis')
 const path = require('path')
-require('dotenv').config({ path: path.join(__dirname, '../.env') })
+require('dotenv').config({ path: path.join(__dirname, '../../.env') })
 
 const redisPassword = process.env.REDIS_PASS
 

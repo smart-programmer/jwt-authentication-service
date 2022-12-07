@@ -3,7 +3,7 @@ const prompt = require('prompt-sync')({ sigint: true });
 const randomstring = require("randomstring");
 const path = require('path')
 const jwt = require('jsonwebtoken')
-require('dotenv').config({ path: path.join(__dirname, '../.env') })
+require('dotenv').config({ path: path.join(__dirname, '../../.env') })
 
 
 /* build jwt token */
