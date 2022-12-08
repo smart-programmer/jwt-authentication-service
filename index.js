@@ -8,7 +8,7 @@ const cookieParser = require('cookie-parser')
 const {readJsonFile} = require('./util/json_utils.js')
 const {checkAuthorizedApiUserMiddleware} = require('./api_security/api_user_auth.js')
 const {requestLogger} = require('./util/middleware.js')
-const {findUser, findUserWithId, replaceUser} = require('./util/db_util.js')
+const {findUser, getAllUsers} = require('./util/db_util.js')
 const {getTokenFromBearerRequestHeader, secondsSinceEpoch, extractRefreshToken} = require('./util/utils.js')
 const {blackListToken, checkBlacklistedToken} = require('./util/redis_util.js')
 const fs = require('fs');
@@ -40,7 +40,7 @@ db_path = path.join(__dirname, 'mockup-DB.json')
 
 // print all users route
 app.get('/users', (req, res) => {
-    readJsonFile(db_path, data => { res.send(data) })
+    getAllUsers().then(users => res.send(users))
 })
 
 // authenticate user 
@@ -50,44 +50,30 @@ app.post('/users/login', (req, res) => {
     let password = req.body.password
 
     // check for credentials match in db
-    readJsonFile(db_path, data => {
-        // get user index
-        let userIndex = findUser(data, username, password)
-        // extract user if exists
-        user = userIndex >= 0 ? data.users[userIndex] : null
-        // console.log(user)
-
-        // if credentials valid authenticate user else 404
-        // in mock db authenticate user by adding jwt to it's user object
-        // in real life just return jwt and client will store it as they wish
-        if (user) {
-            // setup access token payload
-            const jwtAccessTokenPayload = {
-                id: user.id,
-            }
-            // generate access token
-            const jwtAccessToken = jsonwebtoken.sign(jwtAccessTokenPayload, process.env.TEMP_JWT_SECRET, {
-                expiresIn: 60 * 10 // expires in 10 minutes
-            })
-            //setup refresh token payload
-            const jwtRefreshTokenPayload = {
-                id: user.id,
-            }
-            // generate refresh token
-            const jwtRefreshToken = jsonwebtoken.sign(jwtRefreshTokenPayload, process.env.TEMP_JWT_SECRET, {
-                expiresIn: 60 * 60 * 24 * 7 // expires in 7 days
-            })
-            // store tokens in mockup DB
-            user.access_token = jwtAccessToken
-            user.refresh_token = jwtRefreshToken
-            replaceUser(data.users, userIndex, user)
-            fs.writeFileSync(db_path, JSON.stringify(data))
-            // console.log(data)
-            res.send("user has been authenticated")
-        } else {
+    findUser({username: username, password: password}).then(user => {
+        if (!user){
             res.status(404).send("user does not exist")
+            return
         }
-
+        // setup access token payload
+        const jwtAccessTokenPayload = {
+            id: user._id,
+        }
+        // generate access token
+        const jwtAccessToken = jsonwebtoken.sign(jwtAccessTokenPayload, process.env.TEMP_JWT_SECRET, {
+            expiresIn: 60 * 10 // expires in 10 minutes
+        })
+        //setup refresh token payload
+        const jwtRefreshTokenPayload = {
+            id: user._id,
+        }
+        // generate refresh token
+        const jwtRefreshToken = jsonwebtoken.sign(jwtRefreshTokenPayload, process.env.TEMP_JWT_SECRET, {
+            expiresIn: 60 * 60 * 24 * 7 // expires in 7 days
+        })
+        res.cookie("access-token", jwtAccessToken)
+        res.cookie("refresh-token", jwtRefreshToken, {httpOnly: true})
+        res.send("user has been authenticated")
     })
 })
 
@@ -118,29 +104,14 @@ app.post('/users/refresh-auth', (req, res) => {
             const jwtAccessToken = jsonwebtoken.sign(jwtAccessTokenPayload, process.env.TEMP_JWT_SECRET, {
                 expiresIn: 60 * 60 * 1 // expires in 1 hour
             })
-            // in mockup db reset access token in user object
-            readJsonFile(db_path, data => {
-                // get user index
-                let userIndex = findUserWithId(data, decodedPayload.id.toString())
-                // extract user if exists
-                user = userIndex >= 0 ? data.users[userIndex] : null
-                if (user) {
-                    user.access_token = jwtAccessToken
-                    replaceUser(data.users, userIndex, user)
-                    fs.writeFileSync(db_path, JSON.stringify(data))
-                    res.send("user access token refreshed")
-                } else {
-                    res.status(404).send("possible payload tampering, user doesn't exist")
-                }
-            })
-            // just return new access token in real world
-            // res.send(jwtAccessToken)
+            res.cookie("access-token", jwtAccessToken)
+            res.send("refresh successful")
         })
     })
 })
 
 // check if user is authenticated route
-// clients requests is authenticated if 404 requests refresh if 404 prompt login else use and store access token from refresh request
+// client requests this route if result is 404 it requests refresh if 404 prompt login else use and store access token from refresh request
 app.post('/users/is-authenticated', function(req, res) {
     const {refreshToken} = extractRefreshToken(req)
     if (!refreshToken){
@@ -176,17 +147,14 @@ app.post('/users/is-authenticated', function(req, res) {
                 res.status(404).send("invalid access token please refresh the token")
                 return 
             }
-            // get user from DB
-            readJsonFile(db_path, data => {
-                // get user index
-                let userIndex = findUserWithId(data, decodedPayload.id.toString())
-                // extract user if exists
-                user = userIndex >= 0 ? data.users[userIndex] : null
-                if (user) {
-                    res.status(200).send(user)
-                } else {
+            // return user
+            findUser({_id: decodedPayload.id}).then(user => {
+                if (!user){
                     res.status(404).send("user doesn't exists anymore")
+                    return
                 }
+                res.status(200).send(user)
+                return
             })
         })
     })
