@@ -3,7 +3,7 @@ const path = require('path')
 
 async function redisConnect(url) {
     let client = null
-    if (password){
+    if (url){
         client = createClient({url: process.env.REDIS_URI});
     } else {
         client = createClient();
