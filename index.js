@@ -5,7 +5,6 @@ const path = require('path')
 const dotenv = require('dotenv')
 const jsonwebtoken = require('jsonwebtoken')
 const cookieParser = require('cookie-parser')
-const {readJsonFile} = require('./util/json_utils.js')
 const {checkAuthorizedApiUserMiddleware} = require('./api_security/api_user_auth.js')
 const {requestLogger} = require('./util/middleware.js')
 const {findUser, getAllUsers} = require('./util/db_util.js')
@@ -13,9 +12,6 @@ const {getTokenFromBearerRequestHeader, secondsSinceEpoch, extractRefreshToken} 
 const {blackListToken, checkBlacklistedToken} = require('./util/redis_util.js')
 const fs = require('fs');
 const { application } = require('express');
-
-//read env variables
-require('dotenv').config({ path: path.join(__dirname, '../.env') })
 
 const app = express()
 
