@@ -14,14 +14,14 @@ async function redisConnect(url) {
 }
 
 async function checkBlacklistedToken(token) {
-    const client = await redisConnect(redisPassword)
+    const client = await redisConnect(process.env.REDIS_URI)
     const value = await client.get(token);
     client.disconnect()
     return value
 }
 
 async function blackListToken(token, reason, expirationTime) {
-    const client = await redisConnect(redisPassword)
+    const client = await redisConnect(process.env.REDIS_URI)
     await client.set(token, reason, {EX: expirationTime});
 }
 
