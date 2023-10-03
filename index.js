@@ -121,6 +121,7 @@ app.post('/users/is-authenticated', function(req, res) {
             res.status(301).send("refresh token is blacklisted")
             return
         }
+        // ! TODO: verify refresh token after checking not blacklisted
 
         // get access token from Access-Header
         const accessHeader = req.headers["access-header"] || null
@@ -161,6 +162,7 @@ app.post('/users/is-authenticated', function(req, res) {
 app.post('/users/logout', (req, res) => {
     // extract and verify refresh token
     // if tokens are valid connect to redis and register the token as a key with the value of 'logout'
+
     // get refresh token if it's a cookie else null
     const {refreshToken} = extractRefreshToken(req)
     if (!refreshToken){
@@ -180,7 +182,7 @@ app.post('/users/logout', (req, res) => {
         res.status(404).send("access token header is not properly set")
         return
     }
-    // verify access tokens
+    // verify tokens
     let decodedRefreshPayload = null
     let decodedAccessPayload = null
     let invalidAccessToken = false
